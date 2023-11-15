@@ -1,0 +1,273 @@
+---
+title: "IDA Assignment 2023"
+author: "Chan Zhi Qing"
+date: "2023-11-04"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries, echo=FALSE, message=FALSE, warning=FALSE}
+# Load required libraries
+library(ggplot2)
+library(gridExtra)
+library(stats)
+library(ggfortify)
+library(scatterplot3d)
+library(factoextra)
+library(FactoMineR)
+library(tidyr)
+
+```
+
+## Data Description
+
+The "Wine" data set obtained from the UC Irvine Machine Learning Repository (https://archive.ics.uci.edu/dataset/109/wine) is a data set that contains results of a chemical analysis of wines grown in the same region in Italy but derived from three different cultivars. The analysis determined the quantities of 13 constituents found in each of the three types of wine: Barolo, Grignolino, Barbera. The data set consists of 178 instances, each representing a sample of wine.
+
+The first attribute of the data set is the class identifier (1-3) which represents each type of wine (Barolo, Grignolino, Barbera)
+
+The remaining 13 attributes in the data set are:
+
+  1. Alcohol - The alcohol content of the wine.
+  2. Malic acid - The amount of malic acid in the wine.
+  3. Ash - The ash content of the wine.
+  4. Alcalinity of ash - The alkalinity of the ash in the wine.
+  5. Magnesium - The magnesium content in the wine.
+  6. Total phenols - The total phenolic content in the wine.
+  7. Flavanoids - The total flavonoid content in the wine.
+  8. Nonflavanoid phenols - The amount of non-flavonoid phenols in the wine.
+  9. Proanthocyanins - The amount of proanthocyanins in the wine.
+  10. Color intensity - The color intensity of the wine.
+  11. Hue - The hue of the wine.
+  12. OD280/OD315 of diluted wines - The OD280/OD315 ratio of diluted wines.
+  13. Proline - The proline content of the wine.           
+
+The first 6 rows of the data set looks like this:
+```{r wine, echo=FALSE}
+
+# import and read data
+wine <- read.csv("https://archive.ics.uci.edu/ml/machine-learning-databases/wine/wine.data",header = F)
+
+#setwd("~/UoBirm/38964 Intelligent Data Analysis/wine/")
+#wine<-read.csv("wine.data", header = FALSE)
+
+# rename variables
+names(wine) <- c("Class","Alcohol","MalicAcid","Ash","Alcalinity","Magnesium","Phenols","Flavanoids","Nonflavanoids","Proanthocyanins","Color","Hue","OD_Ratio","Proline")
+
+# first 6 rows of data
+head(wine)
+```
+From the data, we may asked questions like which chemical attribute contribute the most to the principal components or in other words which chemical content is usually higher in the different type of wines?
+
+## Data Preprocessing
+
+We will convert the categorical target variable into a factor which in this case is the first column of the data set that represents the classes of the wine.
+
+```{r target, echo=FALSE}
+wine$Class <- as.factor(wine$Class)
+
+```
+
+As data is classified into 3 different types of wine, we will use different markers/colours to represent the types in the plots that will be shown in the later part, where:
+
+  1 - Barolo (black)
+  
+  2 - Grignolino (red)
+  
+  3 - Barbera (green)
+  
+From the dataset we can plot box plots to identify the spread of each variable and potential outliers.
+```{r boxplot, echo=FALSE, warning=FALSE}
+
+wine_data_long <- gather(wine, key = "Variable", value = "Value", -Class)
+class_colors <- c("grey","red", "green3") 
+
+# Create separate box plots for each feature with adjusted plot width
+ggplot(wine_data_long, aes(x = Class, y = Value, fill = Class)) +
+  geom_boxplot() + facet_wrap(~ Variable, scales = "free_y",as.table = TRUE )+
+scale_color_manual(values = class_colors) + scale_fill_manual(values = class_colors)
+
+  
+
+```
+
+## Component Selection & Data Visualization (PCA)
+
+After data preprocessing, we will now attempt PCA. 
+We will first compute the eigenvalues of the covariance matrix and plot them as below from largest to smallest.
+```{r bad PCA, echo=FALSE}
+
+# Perform PCA
+
+winepca <- prcomp(wine[, 2:14])
+
+```
+ 
+```{r bad eigenval, echo=FALSE}
+fviz_eig(winepca, 
+         addlabels = TRUE, 
+         choice="eigenvalue",
+         main="Eigenvalue Spectrum", ncp = 13)
+
+fviz_eig(winepca, 
+         addlabels = TRUE, 
+         ylim = c(0, 100),
+         main="Scree Plot")
+
+```
+
+Higher eigenvalue indicates that the corresponding principal component explains more variance in the data. Therefore, based on the plot we can say that most data variance is explained by the first eigenvector of the covariance matrix where the principal component explains 99.8% of the variance. 
+```{r bad cumsum, echo=FALSE}
+cumsum(winepca$sdev^2 / sum(winepca$sdev^2))
+
+plot(cumsum(winepca$sdev^2 / sum(winepca$sdev^2)), type="o",  main="Cummulative Sum of Eigenvalues",
+     xlab="Dimensions",
+     ylab="Cumulative Sum of Eigenvalues")
+
+```
+
+The cumulative variance plot shows how much total variance is explained as we include more principal components. As we can see the curve starts to flatten out after the third component and therefore we may include just the first two component without losing too much of the variance.
+
+After deciding which principal component to include, we now plot the PCA as below.
+
+```{r bad PCA plot, echo=FALSE}
+
+class_colors <- c("black","red", "green3")
+
+autoplot(
+                                winepca,
+                                data = wine,
+                                colour = 'Class',
+                                frame = TRUE,
+                                frame.type = 't',
+                                frame.colour = 'Class',
+                                scale = 0,
+                                loadings = TRUE,
+                                loadings.colour = 'blue',
+                                loadings.label = TRUE,
+                                loadings.label.size = 5
+                        )+
+scale_color_manual(values = class_colors) + scale_fill_manual(values = class_colors)
+
+```
+
+However, it can be seen that the plot does not provide much information as it highly overlapped and clustered. This indicates that the data needs further processing in order to plot something more informative.
+
+## Further Data Preprocessing
+
+It is important that we standardize the data as each feature in the original data has different scales causing the plots to look out of portion. We can do this by centering the data around the origin and scaling the data so that all data points have a similar range. Therefore, the data now has mean of 0 and standard deviation of 1.
+```{r PCA, echo=FALSE}
+
+# Perform PCA & standardizing the numeric features (mean = 0, standard deviation = 1) 
+winepca <- prcomp(wine[, 2:14], center = TRUE, scale. = TRUE)
+
+```
+
+```{r PC_scores, echo=FALSE}
+# After a PCA, the observations are expressed in principal component scores
+PC <- as.data.frame(winepca$x)
+
+```
+
+```{r eigenvalue, echo=FALSE}
+
+fviz_eig(winepca, 
+         addlabels = TRUE, 
+         choice="eigenvalue",
+         main="Eigenvalue Spectrum", , ncp = 13) +
+         geom_hline(yintercept=1, 
+         linetype="dashed", 
+         color = "red")
+
+```
+
+After further preprocessing of the data, we can now see that the eigenvalue decreases more smoothly than before. However, the majority of the variance is still mainly explained by the first 2 or 3 components.
+```{r cumsum, echo=FALSE}
+
+cumsum(winepca$sdev^2 / sum(winepca$sdev^2))
+
+plot(cumsum(winepca$sdev^2 / sum(winepca$sdev^2)), type="o",main="Cummulative Sum of Eigenvalues",
+     xlab="Dimensions",
+     ylab="Cummulative Sum of Eigenvalues")
+
+
+```
+
+```{r PC_2Dplot, echo=FALSE}
+
+plot(PC$PC1,
+     PC$PC2,
+     col = wine$Class,
+     pch = 19,
+     main="2D Scatterplot",
+     xlab="PC1",
+     ylab="PC2")
+ 
+legend("bottomright", 
+       legend = levels(wine$Class), 
+       col = seq_along(levels(wine$Class)), 
+       pch = 19)
+ 
+legend("bottomright", 
+       legend = levels(wine$Class), 
+       col = seq_along(levels(wine$Class)), 
+       pch = 19)
+```
+
+```{r PCA_plot, echo=FALSE}
+
+class_colors <- c("black","red", "green3")
+
+autoplot(
+                                winepca,
+                                data = wine,
+                                colour = 'Class',
+                                frame = TRUE,
+                                frame.type = 't',
+                                frame.colour = 'Class',
+                                scale = 0,
+                                loadings = TRUE,
+                                loadings.colour = 'blue',
+                                loadings.label = TRUE,
+                                loadings.label.size = 5
+                        ) +
+scale_color_manual(values = class_colors) + scale_fill_manual(values = class_colors)
+
+```
+
+From the PCA plots above, each point represents a sample of the wine and the vectors tells us about the feature relationship with the corresponding component. For instance, features such as alcalinity and content of malic acid and non-flavonoids in the wine are positively correlated with PC1. Therefore we can say that Barbera (wine class 3) tend to have higher content of those 3 chemicals.
+```{r PC_3Dplot, echo=FALSE}
+
+plot_3d <- with(PC, 
+                scatterplot3d(PC$PC1, 
+                              PC$PC2, 
+                              PC$PC3, 
+                              color = as.numeric(wine$Class), 
+                              pch = 19, 
+                              main ="3D Scatter Plot", 
+                              xlab="PC1",
+                              ylab="PC2",
+                              zlab="PC3"))
+ 
+legend(plot_3d$xyz.convert(0.5, 0.7, 0.5), 
+       pch = 19, 
+       yjust=0,
+       legend = levels(wine$Class), 
+       col = seq_along(levels(wine$Class)))
+
+```
+
+We can also plot a 3D scatter plot to visualise the relationship between the classes and the first 3 principal components as we can see from the eigenvalues plot after data scaling, the first 3 eigenvectors have values more that 1 which explains majority of the variance in the data.
+
+In conclusion, the analysis of eigenvalues and use of PCA allowed us to effectively reduce the dimension but still able to preserve the key chemical information in the different types of wine and identify features that play a crucial role in distinguishing between classes. It is also interesting to see different chemical composition of the wines and gain insights about the chemical constitution of the wine through analysis of the data, hence investigating which chemical attributes really differentiates the types of wine.
+
+
+
+
+
+
+
